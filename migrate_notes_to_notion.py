@@ -85,15 +85,6 @@ UUID_RE = re.compile(
 
 
 def extract_notion_id(url_or_id: str) -> str:
-    """Extract a Notion page UUID from a URL or raw ID string.
-
-    Accepts:
-      - https://www.notion.so/Notes-3560f748d2f680c9accbd9b6dadaf904
-      - https://www.notion.so/workspace/Notes-...?source=copy_link
-      - 3560f748-d2f6-80c9-accb-d9b6dadaf904
-      - 3560f748d2f680c9accbd9b6dadaf904
-    Returns: dashed UUID.
-    """
     s = url_or_id.strip()
     if not s:
         raise ValueError("Empty Notion URL/ID")
@@ -286,7 +277,6 @@ def notion_request(method, path, body=None):
 
 
 def notion_check_access(parent_id):
-    """Sanity-check that the integration can read the parent page."""
     log(f"Verifying Notion integration access to parent page {parent_id}...")
     try:
         resp = notion_request("GET", f"/pages/{parent_id}")
@@ -448,7 +438,6 @@ def notion_create_page(parent_page_id, title, blocks):
 
 
 def notion_get_existing_children(parent_page_id):
-    """Return {title: page_id} of direct child pages."""
     out = {}
     cursor = None
     while True:
@@ -629,9 +618,15 @@ def main():
     log(f"Mode: {'DRY RUN' if args.dry_run else 'LIVE'}")
 
     state = load_state()
-    if state.get("parent_id") and state["parent_id"] != parent_id:
-        log(f"Parent changed (was {state['parent_id']}, now {parent_id}); resetting folder cache", "WARN")
+    # Reset folder + migrated cache if parent_id has changed (or was never set
+    # and there's stale folder data from a previous broken run)
+    if state.get("parent_id") != parent_id:
+        prev = state.get("parent_id")
+        if state.get("folder_ids") or state.get("migrated_files"):
+            log(f"Parent changed (was {prev!r}, now {parent_id!r}); "
+                f"resetting folder & migration caches", "WARN")
         state["folder_ids"] = {}
+        state["migrated_files"] = {}
     state["parent_id"] = parent_id
     save_state(state)
 

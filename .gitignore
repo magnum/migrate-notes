@@ -1,2 +1,4 @@
 credentials.json
 token.json
+.migration_state.json
+migration.log
