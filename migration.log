@@ -1,0 +1,235 @@
+[11:40:49] INFO  NOTES_ROOT = /Users/magnum/Library/CloudStorage/GoogleDrive-antoniomolinari1977@gmail.com/My Drive/notes/iCloud
+[11:40:49] INFO  NOTION_NOTES_PARENT_ID = 3550f748-d2f6-818f-aaf0-c4e40a2daf69
+[11:40:49] INFO  Mode: DRY RUN
+[11:40:49] INFO  Skipping folder: Recently Deleted
+[11:40:49] INFO  Skipping folder: bookmark
+[11:40:49] INFO  Found 469 .md files across 16 folders
+[11:40:49] WARN  Google API libs not installed; skipping Drive attachment lookup
+[11:40:49] WARN  Install with: pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib
+[11:40:49] INFO  === Folder: AI (2 files) ===
+[11:40:49] INFO    [dry-run] Would create: AI, machine learning, deep learning (62 blocks)
+[11:40:50] INFO    [dry-run] Would create: generative AI (15 blocks)
+[11:40:50] INFO  === Folder: Career (10 files) ===
+[11:40:50] INFO    [dry-run] Would create: Career Notes (9 blocks)
+[11:40:50] INFO    [dry-run] Would create: Inspiration (7 blocks)
+[11:40:51] INFO    [dry-run] Would create: iubenda (13 blocks)
+[11:40:51] INFO    [dry-run] Would create: Automattic (33 blocks)
+[11:40:51] INFO    [dry-run] Would create: Basecamp (29 blocks)
+[11:40:52] INFO    [dry-run] Would create: Job Opportunities (9 blocks)
+[11:40:52] INFO    [dry-run] Would create: Lex Friedman (14 blocks)
+[11:40:52] INFO    [dry-run] Would create: Recommendations (7 blocks)
+[11:40:53] INFO    [dry-run] Would create: Shopify (18 blocks)
+[11:40:53] INFO    [dry-run] Would create: Nuova azienda - New Company (26 blocks)
+[11:40:53] INFO  === Folder: Debriefs (39 files) ===
+[11:40:53] INFO    [dry-run] Would create: Lubiam, call 29-3-2019 (36 blocks)
+[11:40:54] INFO    [dry-run] Would create: yam passaggio consegne, riunione pm (29 blocks)
+[11:40:54] INFO    [dry-run] Would create: fdl, 26-5-2019 (17 blocks)
+[11:40:55] INFO    [dry-run] Would create: yam112003, progetto philadelphia + grandi stazioni (16 blocks)
+[11:40:55] INFO    [dry-run] Would create: fdl, call w- fdl workshop for gigya, 29-11-2019 (5 blocks)
+[11:40:55] INFO    [dry-run] Would create: Rexulta, assessment (35 blocks)
+[11:40:56] INFO    [dry-run] Would create: Fimar (21 blocks)
+[11:40:56] INFO    [dry-run] Would create: A2Asmartcity, swcimiteri (27 blocks)
+[11:40:56] INFO    [dry-run] Would create: Filmar (16 blocks)
+[11:40:57] INFO    [dry-run] Would create: novigo 25-1-2020 (30 blocks)
+[11:40:57] INFO    · 2021-02-01-Palazzoli.md (skip-body too short (152 chars))
+[11:40:57] INFO    [dry-run] Would create: ariasensing, 9-2-2020 (10 blocks)
+[11:40:58] INFO    [dry-run] Would create: Incode - Gulliver (13 blocks)
+[11:40:58] INFO    [dry-run] Would create: mymentor,  federico cornici (21 blocks)
+[11:40:58] INFO    [dry-run] Would create: whitejar, by app quality (22 blocks)
+[11:40:59] INFO    · 2022-01-24-CRIT_Mobile rete con password C1R2I3T42021 per i dispositivi tipo….md (skip-body too short (152 chars))
+[11:40:59] INFO    [dry-run] Would create: workshop actor model, elixir (49 blocks)
+[11:41:00] INFO    · 2022-04-29-agicap.md (skip-body too short (191 chars))
+[11:41:00] INFO    [dry-run] Would create: progetto yam112003 nft video-audio (18 blocks)
+[11:41:00] INFO    [dry-run] Would create: call arnaldo pellini 29-07-2022 (21 blocks)
+[11:41:01] INFO    · 2022-08-25-Certificazione verde Covid-19 di AN-M disponibile- Usa AUTHCODE ITDE1ZRCW1KL….md (skip-body too short (156 chars))
+[11:41:01] INFO    [dry-run] Would create: AI leader workshop, QA at Lego (58 blocks)
+[11:41:01] INFO    [dry-run] Would create: livingstone, note progetto (76 blocks)
+[11:41:02] INFO    [dry-run] Would create: call Avv- Giorgio Trono 18-11-2022, questione intercos e test tag… (10 blocks)
+[11:41:02] INFO    [dry-run] Would create: crit modena (29 blocks)
+[11:41:02] INFO    [dry-run] Would create: kotuko 22-02-2023 (11 blocks)
+[11:41:03] INFO    [dry-run] Would create: workshop NFT, GAMING E METAVERSO (114 blocks)
+[11:41:03] INFO    [dry-run] Would create: Kotuko, camera 24-03-2023 (24 blocks)
+[11:41:03] INFO    [dry-run] Would create: kotuko, riunione per accesso a server camera (12 blocks)
+[11:41:04] INFO    [dry-run] Would create: URCA! (7 blocks)
+[11:41:04] INFO    · 2023-07-14-Laba, 14-07-2023 riunione triennio.md (skip-body too short (186 chars))
+[11:41:05] INFO    [dry-run] Would create: cosmoimd, sandbox v2 5-9-2023 (14 blocks)
+[11:41:05] INFO    [dry-run] Would create: Supernova agencies 2023 (3 blocks)
+[11:41:05] INFO    [dry-run] Would create: src, shrimp race club (106 blocks)
+[11:41:06] INFO    [dry-run] Would create: myqube, sicurezza ascensori, cyberlift (32 blocks)
+[11:41:06] INFO    [dry-run] Would create: prassel, ftp manager (8 blocks)
+[11:41:06] INFO    [dry-run] Would create: cattolica, valutazione progetto optichain (8 blocks)
+[11:41:07] INFO    · 2025-05-07-Laba, gestionale.md (skip-body too short (64 chars))
+[11:41:07] INFO    · 2025-10-24-Gallo.md (skip-body too short (172 chars))
+[11:41:07] INFO  === Folder: Devices (2 files) ===
+[11:41:07] INFO    [dry-run] Would create: Devices (40 blocks)
+[11:41:08] INFO    [dry-run] Would create: macOS setup (3 blocks)
+[11:41:08] INFO  === Folder: Home (33 files) ===
+[11:41:08] INFO    [dry-run] Would create: Lista viaggio (150 blocks)
+[11:41:08] INFO    [dry-run] Would create: Nota condivisa famiglia (4 blocks)
+[11:41:09] INFO    [dry-run] Would create: Firenze Giugno 2022, Concerto RHCP (22 blocks)
+[11:41:09] INFO    [dry-run] Would create: Casa Ostiano (37 blocks)
+[11:41:10] INFO    [dry-run] Would create: Scuola marco (8 blocks)
+[11:41:10] INFO    [dry-run] Would create: Gita Firenze Marco apr 2023 (20 blocks)
+[11:41:10] INFO    [dry-run] Would create: marco, gita strasburgo (5 blocks)
+[11:41:11] INFO    [dry-run] Would create: Consiglio classe 3b 14-11-2023 (8 blocks)
+[11:41:11] INFO    [dry-run] Would create: Open day Aselli 17-11-2023 (11 blocks)
+[11:41:11] INFO    [dry-run] Would create: Open day Capirola 03-12-2023 (18 blocks)
+[11:41:12] INFO    [dry-run] Would create: Lista spesa famiglia  - USARE PROMEMORIA --) (299 blocks)
+[11:41:12] INFO    [dry-run] Would create: Marco, nota condivisa (50 blocks)
+[11:41:12] INFO    [dry-run] Would create: Consiglio classe 3b 18-03-2024 (12 blocks)
+[11:41:13] INFO    [dry-run] Would create: Vent Derapage 50 xb2lhc (8 blocks)
+[11:41:13] INFO    [dry-run] Would create: Berlino agosto 2024 (52 blocks)
+[11:41:13] INFO    [dry-run] Would create: marco, note liceo scientifico, classe 1b (19 blocks)
+[11:41:14] INFO    [dry-run] Would create: Consiglio di classe liceo 1b, 20-11-2024 (15 blocks)
+[11:41:14] INFO    [dry-run] Would create: Consiglio di classe liceo 1b, 11-03-2025 (9 blocks)
+[11:41:15] INFO    [dry-run] Would create: Mappa mentale bilingue - “Aboriginal People and Boomerangs” (8 blocks)
+[11:41:15] INFO    [dry-run] Would create: Mappa mentale bilingue - “Families and Households in the UK” (10 blocks)
+[11:41:15] INFO    [dry-run] Would create: Mappa mentale bilingue - “Second-Hand – The New Cool” (12 blocks)
+[11:41:16] INFO    [dry-run] Would create: Mappa mentale bilingue - “To Share or Not to Share-” (10 blocks)
+[11:41:16] INFO    [dry-run] Would create: What’s phishing (12 blocks)
+[11:41:16] INFO    [dry-run] Would create: Andrea, Elementari (23 blocks)
+[11:41:17] INFO    [dry-run] Would create: marco, note liceo scientifico, classe 2b (27 blocks)
+[11:41:17] INFO    [dry-run] Would create: Mastercom (2 blocks)
+[11:41:17] INFO    · 2025-12-25-Codici sconto.md (skip-body too short (135 chars))
+[11:41:18] INFO    [dry-run] Would create: Gita a Napoli 2024 (53 blocks)
+[11:41:18] INFO    [dry-run] Would create: Milano dicembre 2025 (4 blocks)
+[11:41:18] INFO    [dry-run] Would create: Capirola, problemi trasporti Arriva (6 blocks)
+[11:41:19] INFO    · 2026-02-10-Inglese.md (skip-body too short (164 chars))
+[11:41:19] INFO    [dry-run] Would create: Elettrodomestici (5 blocks)
+[11:41:20] INFO    · 2026-03-15-Andrea Elementari.md (skip-body too short (118 chars))
+[11:41:20] INFO  === Folder: HomeAutomation (9 files) ===
+[11:41:20] INFO    [dry-run] Would create: HomeAutomation notes (31 blocks)
+[11:41:20] INFO    [dry-run] Would create: Homeassistant (80 blocks)
+[11:41:21] INFO    [dry-run] Would create: Door Openers (10 blocks)
+[11:41:21] INFO    [dry-run] Would create: Home network, connectivity, internet, connettività (37 blocks)
+[11:41:21] INFO    [dry-run] Would create: Homekit (9 blocks)
+[11:41:22] INFO    [dry-run] Would create: zwave (3 blocks)
+[11:41:22] INFO    [dry-run] Would create: Impianto Fotovoltaico (45 blocks)
+[11:41:22] INFO    [dry-run] Would create: Energy Monitoring and classification, NILM (23 blocks)
+[11:41:23] INFO    [dry-run] Would create: HomeAssistant Coffee machine & Kettle (20 blocks)
+[11:41:23] INFO  === Folder: IoT (2 files) ===
+[11:41:23] INFO    [dry-run] Would create: Flipper Zero (30 blocks)
+[11:41:24] INFO    [dry-run] Would create: M5 StickC-Plus2 (18 blocks)
+[11:41:24] INFO  === Folder: Notes (168 files) ===
+[11:41:24] INFO    [dry-run] Would create: Papà, Mario Molinari, Casa Pralboino (182 blocks)
+[11:41:24] INFO    [dry-run] Would create: Classe B ES520KK (23 blocks)
+[11:41:25] INFO    [dry-run] Would create: Idee , ideas (100 blocks)
+[11:41:25] INFO    [dry-run] Would create: Musica e concerti (71 blocks)
+[11:41:25] INFO    [dry-run] Would create: Definizioni, frasi, citazioni, storie, personaggi (278 blocks)
+[11:41:26] INFO    [dry-run] Would create: Incode (127 blocks)
+[11:41:26] INFO    [dry-run] Would create: Template testi, messaggi di esempio (67 blocks)
+[11:41:27] INFO    [dry-run] Would create: Standby, Uninstall (29 blocks)
+[11:41:27] INFO    [dry-run] Would create: Laba, note (131 blocks)
+[11:41:27] INFO    [dry-run] Would create: apache, httpd, -htaccess (104 blocks)
+[11:41:28] INFO    · 2019-05-28-Andrea.md (skip-body too short (62 chars))
+[11:41:28] INFO    [dry-run] Would create: salute (19 blocks)
+[11:41:28] INFO    [dry-run] Would create: Prestiti, Scambi, Vendite (34 blocks)
+[11:41:29] INFO    [dry-run] Would create: Antonio Molinari (223 blocks)
+[11:41:29] INFO    · 2020-10-25-Vino.md (skip-body too short (96 chars))
+[11:41:29] INFO    [dry-run] Would create: HomeAutomation notes (31 blocks)
+[11:41:30] INFO    [dry-run] Would create: Kipy (301 blocks)
+[11:41:30] INFO    [dry-run] Would create: messaggi temporanei, temporary messages (373 blocks)
+[11:41:30] INFO    [dry-run] Would create: Vacanza 2021 (19 blocks)
+[11:41:31] INFO    [dry-run] Would create: cobox (16 blocks)
+[11:41:31] INFO    [dry-run] Would create: Consiglio classe 15-11-2021 (22 blocks)
+[11:41:32] INFO    [dry-run] Would create: Cara santa Lucia (1 blocks)
+[11:41:32] INFO    · 2022-01-01-Val di Fassa.md (skip-body too short (102 chars))
+[11:41:32] INFO    [dry-run] Would create: Learning, Formazione (29 blocks)
+[11:41:33] INFO    [dry-run] Would create: Tools, services, platforms, libraries (41 blocks)
+[11:41:33] INFO    [dry-run] Would create: Todo (109 blocks)
+[11:41:33] INFO    [dry-run] Would create: Fact Checking,  Reference (10 blocks)
+[11:41:34] INFO    [dry-run] Would create: personal notes, private (8 blocks)
+[11:41:34] INFO    [dry-run] Would create: Detti e storie popolari (16 blocks)
+[11:41:34] INFO    [dry-run] Would create: Divertimento, Fun (20 blocks)
+[11:41:35] INFO    [dry-run] Would create: Vendita Casa Pralboino (54 blocks)
+[11:41:35] INFO    [dry-run] Would create: Energia Elettrica - Pannelli Fotovoltaici (47 blocks)
+[11:41:36] INFO    [dry-run] Would create: Riunione classe 27-10-2022 (29 blocks)
+[11:41:36] INFO    [dry-run] Would create: Casa Ostiano (10 blocks)
+[11:41:36] INFO    [dry-run] Would create: Cose da ricordare ;-) (3 blocks)
+[11:41:37] INFO    [dry-run] Would create: Social Profiles (20 blocks)
+[11:41:37] INFO    [dry-run] Would create: Ubuntu (3 blocks)
+[11:41:37] INFO    · 2023-03-25-nel 2022 14k tra spese e oneri bancari.md (skip-body too short (176 chars))
+[11:41:38] INFO    [dry-run] Would create: vue - nuxt (4 blocks)
+[11:41:38] INFO    [dry-run] Would create: furto in auto 3-6-2023 (13 blocks)
+[11:41:38] INFO    [dry-run] Would create: Homeassistant (80 blocks)
+[11:41:39] INFO    [dry-run] Would create: Cosmico (18 blocks)
+[11:41:39] INFO    · 2023-07-14-Sky.md (skip-body too short (73 chars))
+[11:41:39] INFO    [dry-run] Would create: incode, edenred 15-9-2023 (36 blocks)
+[11:41:40] INFO    [dry-run] Would create: Side projects, progetti personali (6 blocks)
+[11:41:40] INFO    · 2023-10-20-System Desitn, Best practices.md (skip-body too short (126 chars))
+[11:41:41] INFO    [dry-run] Would create: Riunione classe 26-10-2023 (31 blocks)
+[11:41:41] INFO    · 2023-10-30-Nao 30-10-2023.md (skip-body too short (160 chars))
+[11:41:41] INFO    [dry-run] Would create: Open day Torriani 18-11-2023 (18 blocks)
+[11:41:42] INFO    [dry-run] Would create: Moto (3 blocks)
+[11:41:42] INFO    [dry-run] Would create: Door Openers (10 blocks)
+[11:41:42] INFO    [dry-run] Would create: Home network, connectivity, internet, connettività (37 blocks)
+[11:41:43] INFO    [dry-run] Would create: Homekit (9 blocks)
+[11:41:43] INFO    [dry-run] Would create: auto elettrica (9 blocks)
+[11:41:43] INFO    · 2024-01-17-3479367391.md (skip-body too short (1 chars))
+[11:41:44] INFO    [dry-run] Would create: Mario Molinari, salute, ricoveri (30 blocks)
+[11:41:44] INFO    [dry-run] Would create: ok, chiedo perché non è chiaro- anche io se posso linko documenti… (5 blocks)
+[11:41:45] INFO    [dry-run] Would create: tesi moira (2 blocks)
+[11:41:45] INFO    · 2024-01-21-fuffa.md (skip-body too short (86 chars))
+[11:41:45] INFO    [dry-run] Would create: Txt Novigo 25-01-2024 (18 blocks)
+[11:41:52] INFO  NOTES_ROOT = /Users/magnum/Library/CloudStorage/GoogleDrive-antoniomolinari1977@gmail.com/My Drive/notes/iCloud
+[11:41:52] INFO  NOTION_NOTES_PARENT_ID = 3550f748-d2f6-818f-aaf0-c4e40a2daf69
+[11:41:52] INFO  Mode: LIVE
+[11:41:52] INFO  Skipping folder: Recently Deleted
+[11:41:52] INFO  Skipping folder: bookmark
+[11:41:52] INFO  Found 469 .md files across 16 folders
+[11:41:52] WARN  Google API libs not installed; skipping Drive attachment lookup
+[11:41:52] WARN  Install with: pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib
+[11:41:52] INFO  === Folder: AI (2 files) ===
+[11:42:30] INFO  NOTES_ROOT = /Users/magnum/Library/CloudStorage/GoogleDrive-antoniomolinari1977@gmail.com/My Drive/notes/iCloud
+[11:42:30] INFO  NOTION_NOTES_PARENT_ID = 3550f748-d2f6-818f-aaf0-c4e40a2daf69
+[11:42:30] INFO  Mode: LIVE
+[11:42:30] INFO  Skipping folder: Recently Deleted
+[11:42:30] INFO  Skipping folder: bookmark
+[11:42:30] INFO  Found 469 .md files across 16 folders
+[11:42:31] WARN  credentials.json not found at /Users/magnum/Desktop/migrate/credentials.json; skipping Drive lookup
+[11:42:31] INFO  === Folder: AI (2 files) ===
+[11:47:01] INFO  NOTES_ROOT = /Users/magnum/Library/CloudStorage/GoogleDrive-antoniomolinari1977@gmail.com/My Drive/notes/iCloud
+[11:47:01] INFO  NOTION_NOTES_PARENT_ID = 3550f748-d2f6-818f-aaf0-c4e40a2daf69
+[11:47:01] INFO  Mode: LIVE
+[11:47:01] INFO  Skipping folder: Recently Deleted
+[11:47:01] INFO  Skipping folder: bookmark
+[11:47:01] INFO  Found 469 .md files across 16 folders
+[11:47:19] INFO  NOTES_ROOT = /Users/magnum/Library/CloudStorage/GoogleDrive-antoniomolinari1977@gmail.com/My Drive/notes/iCloud
+[11:47:19] INFO  NOTION_NOTES_PARENT_ID = 3550f748-d2f6-818f-aaf0-c4e40a2daf69
+[11:47:19] INFO  Mode: LIVE
+[11:47:19] INFO  Skipping folder: Recently Deleted
+[11:47:19] INFO  Skipping folder: bookmark
+[11:47:19] INFO  Found 469 .md files across 16 folders
+[11:48:32] INFO  NOTES_ROOT = /Users/magnum/Library/CloudStorage/GoogleDrive-antoniomolinari1977@gmail.com/My Drive/notes/iCloud
+[11:48:32] INFO  NOTION_NOTES_PARENT_ID = 3550f748-d2f6-818f-aaf0-c4e40a2daf69
+[11:48:32] INFO  Mode: LIVE
+[11:48:32] INFO  Skipping folder: Recently Deleted
+[11:48:32] INFO  Skipping folder: bookmark
+[11:48:32] INFO  Found 469 .md files across 16 folders
+[11:48:39] INFO  Indexing Drive files for attachment lookup...
+[11:49:01] INFO  Indexed 887 Drive files
+[11:49:01] INFO  === Folder: AI (2 files) ===
+[11:49:32] INFO  NOTES_ROOT = /Users/magnum/Library/CloudStorage/GoogleDrive-antoniomolinari1977@gmail.com/My Drive/notes/iCloud
+[11:49:32] INFO  NOTION_NOTES_PARENT_ID = 3550f748-d2f6-818f-aaf0-c4e40a2daf69
+[11:49:32] INFO  Mode: LIVE
+[11:49:32] INFO  Skipping folder: Recently Deleted
+[11:49:32] INFO  Skipping folder: bookmark
+[11:49:32] INFO  Found 469 .md files across 16 folders
+[11:49:32] INFO  Using cached attachment map (887 entries)
+[11:49:32] INFO  === Folder: AI (2 files) ===
+[11:50:01] INFO  NOTES_ROOT = /Users/magnum/Library/CloudStorage/GoogleDrive-antoniomolinari1977@gmail.com/My Drive/notes/iCloud
+[11:50:01] INFO  NOTION_NOTES_PARENT_ID = 3550f748-d2f6-818f-aaf0-c4e40a2daf69
+[11:50:01] INFO  Mode: LIVE
+[11:50:01] INFO  Skipping folder: Recently Deleted
+[11:50:01] INFO  Skipping folder: bookmark
+[11:50:01] INFO  Found 469 .md files across 16 folders
+[11:50:01] INFO  Using cached attachment map (887 entries)
+[11:50:01] INFO  === Folder: AI (2 files) ===
+[11:51:27] INFO  NOTES_ROOT = /Users/magnum/Library/CloudStorage/GoogleDrive-antoniomolinari1977@gmail.com/My Drive/notes/iCloud
+[11:51:27] INFO  NOTION_NOTES_PARENT_ID = 3550f748-d2f6-818f-aaf0-c4e40a2daf69
+[11:51:27] INFO  Mode: LIVE
+[11:51:27] INFO  Skipping folder: Recently Deleted
+[11:51:27] INFO  Skipping folder: bookmark
+[11:51:27] INFO  Found 469 .md files across 16 folders
+[11:51:27] INFO  Using cached attachment map (887 entries)
+[11:51:27] INFO  === Folder: AI (2 files) ===
