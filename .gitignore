@@ -1,6 +1,11 @@
 credentials.json
 token.json
+
 .migration_state.json
+.export_state.json
+
 migration.log
+export.log
 
 notes
+output
