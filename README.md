@@ -1,59 +1,61 @@
 # Migrazione Note iCloud → Notion
 
-Script Python standalone per migrare note `.md` esportate da iCloud (presenti nella tua cartella locale Google Drive) verso Notion, mantenendo struttura cartelle e link agli allegati.
+Script Python standalone per migrare note `.md` esportate da iCloud (presenti nella tua cartella locale Google Drive) verso Notion, mantenendo la struttura cartelle e i link agli allegati.
+
+## Cambio importante rispetto alla v1
+
+Lo script ora **richiede** l'URL della pagina Notion che farà da "root" (quella che conterrà AI, Reference, Career, ecc.) — è obbligatorio passarlo via `--parent-url` o env var. Niente più ID hardcoded.
 
 ## Cosa fa
 
-- Legge ricorsivamente `~/Library/CloudStorage/GoogleDrive-.../My Drive/notes/iCloud`
-- Per ogni cartella top-level (AI, Reference, Career, ...) crea/usa la pagina corrispondente su Notion sotto `notes`
+- Legge ricorsivamente la cartella `NOTES_ROOT`
+- Per ogni cartella top-level (AI, Reference, ...) cerca una pagina già esistente con quel nome sotto il parent indicato; se non c'è la crea
 - Per ogni `.md` crea una sotto-pagina Notion col contenuto pulito
 - Sostituisce i riferimenti `images/foo.png` e `attachments/bar.pdf` con link Drive cliccabili
-- **Idempotente**: se interrotto, riparte da dove si era fermato (state file `.migration_state.json`)
+- **Idempotente**: se interrotto riparte da dove si era fermato (state in `.migration_state.json`)
 - Salta automaticamente note vuote o con titolo "New Note"
 - Salta cartelle `bookmark` e `Recently Deleted`
 
 ## Setup
 
-### 1. Installa dipendenze
+### 1. Dipendenze
 
 ```bash
-cd ~/Downloads  # o dove preferisci
-# crea virtualenv (opzionale ma consigliato)
 python3 -m venv venv
 source venv/bin/activate
-
-# librerie Drive API (opzionali ma consigliate per i link agli allegati)
 pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib
 ```
 
-### 2. Crea un'integration Notion
+(Le librerie Google sono opzionali ma consigliate per i link agli allegati.)
 
-1. Vai su https://www.notion.so/my-integrations
-2. "New integration" → dai un nome (es. "Notes Migrator"), associa al tuo workspace
-3. Copia il token (`secret_...`)
-4. **Importante**: vai sulla pagina `notes` su Notion → menu `...` in alto a destra → "Add connections" → seleziona la tua integration. Senza questo l'API non può scrivere.
+### 2. Notion: crea integration e collega la pagina
 
-### 3. (Opzionale) Setup Google Drive API per gli allegati
+1. https://www.notion.so/my-integrations → "New integration" → dagli un nome → copia il token (`secret_...`)
+2. **Apri su Notion la pagina che farà da root** (quella che contiene AI, Reference, ecc.)
+3. In alto a destra: **`•••` → "Connections" → "Add connections"** → seleziona la tua integration
+4. Conferma. Tutte le sotto-pagine ereditano l'accesso.
 
-Se vuoi che gli allegati delle note diventino link Drive cliccabili (consigliato):
+### 3. (Opzionale) Drive API per gli allegati
+
+Se vuoi che gli allegati nelle note diventino link Drive cliccabili:
 
 1. https://console.cloud.google.com/ → crea progetto
 2. APIs & Services → Library → cerca "Google Drive API" → Enable
-3. APIs & Services → Credentials → Create credentials → OAuth client ID
+3. Credentials → Create credentials → OAuth client ID
    - Application type: **Desktop app**
-   - Scaricare il JSON, rinominarlo `credentials.json` e metterlo nella stessa cartella dello script
-4. Al primo run lo script aprirà il browser per il consenso OAuth, poi salverà `token.json` per i run successivi
+   - Scarica il JSON, rinominalo `credentials.json` e mettilo nella stessa cartella dello script
+4. Al primo run lo script aprirà il browser per il consenso OAuth
 
-Se salti questo step, gli allegati appariranno come testo (non link cliccabili).
+Senza questo step, gli allegati appariranno come testo (non link cliccabili) — non blocca la migrazione.
 
-### 4. Configura le variabili
+### 4. Variabili d'ambiente
 
 ```bash
 export NOTION_TOKEN="secret_xxx..."
 export NOTES_ROOT="$HOME/Library/CloudStorage/GoogleDrive-antoniomolinari1977@gmail.com/My Drive/notes/iCloud"
-# Il parent ID della pagina "notes" su Notion è già nello script come default,
-# ma puoi sovrascriverlo:
-# export NOTION_NOTES_PARENT_ID="3550f748-d2f6-818f-aaf0-c4e40a2daf69"
+
+# Opzionale: invece di passare --parent-url ogni volta
+export NOTION_NOTES_PARENT_URL="https://www.notion.so/antoniomolinari/Notes-3560f748d2f680c9accbd9b6dadaf904"
 ```
 
 ## Uso
@@ -61,63 +63,64 @@ export NOTES_ROOT="$HOME/Library/CloudStorage/GoogleDrive-antoniomolinari1977@gm
 ### Dry run (raccomandato la prima volta)
 
 ```bash
-python3 migrate_notes_to_notion.py --dry-run
+python3 migrate_notes_to_notion.py \
+  --parent-url "https://www.notion.so/antoniomolinari/Notes-3560f748d2f680c9accbd9b6dadaf904?source=copy_link" \
+  --dry-run
 ```
 
-Questo NON scrive su Notion. Mostra solo cosa farebbe.
+Non scrive su Notion, mostra solo cosa farebbe.
 
 ### Test su una sola cartella
 
 ```bash
-python3 migrate_notes_to_notion.py --folder Reference --dry-run
-python3 migrate_notes_to_notion.py --folder Reference  # live
+python3 migrate_notes_to_notion.py \
+  --parent-url "..." \
+  --folder Reference \
+  --dry-run
+
+python3 migrate_notes_to_notion.py --parent-url "..." --folder Reference   # live
 ```
 
 ### Migrazione completa
 
 ```bash
-python3 migrate_notes_to_notion.py
+python3 migrate_notes_to_notion.py --parent-url "..."
 ```
 
-Va avanti finché non finisce (o crashes; in quel caso rilancialo, riparte dal punto giusto).
+### Riprendere dopo un crash
 
-### Saltare la Drive API (allegati come testo plain)
+Rilancia lo stesso comando — lo state file (`.migration_state.json`) tiene traccia di cosa è già stato migrato.
+
+### Reset
 
 ```bash
-python3 migrate_notes_to_notion.py --no-drive-api
+python3 migrate_notes_to_notion.py --parent-url "..." --reset-state
 ```
 
-### Reset completo
-
-```bash
-python3 migrate_notes_to_notion.py --reset-state
-```
+> Nota: `--reset-state` cancella solo lo state file locale. Le pagine già create su Notion restano lì.
 
 ## Cosa controllare
 
-Lo script genera due file nella sua cartella:
+Lo script genera nella sua cartella:
 
 - `migration.log` — log dettagliato di ogni operazione
-- `.migration_state.json` — stato persistente (cartelle Notion create, file già migrati, mappa allegati Drive). **Non cancellare** se vuoi mantenere idempotenza.
+- `.migration_state.json` — stato persistente (cartelle Notion mappate, file già migrati, mappa allegati Drive). **Non cancellare** se vuoi mantenere idempotenza.
 
-## Personalizzazioni rapide
+## Verifica iniziale dell'integration
 
-Tutte all'inizio del file `migrate_notes_to_notion.py`:
+All'avvio (in modalità live) lo script chiama `GET /pages/<parent_id>` per verificare l'accesso. Se fallisce con 404 (`object_not_found`), il messaggio te lo dice esplicitamente: l'integration non è collegata alla pagina. Vai sulla pagina root su Notion → `•••` → Connections → aggiungi.
+
+## Personalizzazioni
+
+All'inizio del file:
 
 - `MIN_CONTENT_CHARS = 200` — soglia minima caratteri per non skippare una nota
-- `SKIP_FOLDERS = {"bookmark", "Recently Deleted"}` — cartelle da ignorare
-- `SKIP_TITLE_PATTERNS` — regex di titoli da ignorare (oltre a "New Note")
-- `KNOWN_NOTION_FOLDERS` — mappa pre-popolata delle pagine Notion già esistenti, per non ricrearle
+- `SKIP_FOLDERS` — cartelle da ignorare
+- `SKIP_TITLE_PATTERNS` — regex di titoli da ignorare
 
 ## Limiti noti
 
-- Il converter Markdown è minimal: heading, bullet, numerati, code fence, paragrafi. Niente bold/italic inline (vengono lasciati come testo plain con `**` letterali — Notion li renderà comunque parzialmente).
-- Note con tabelle Markdown vengono importate come testo (Notion non supporta tabelle inline via API in modo semplice).
-- Rate limit Notion: ~3 req/s. Lo script fa pause da 0.35s tra una nota e l'altra. Per 200 note prevedi ~2-3 minuti.
-- Se una nota supera i ~95 blocchi, vengono splittati in batch (Notion limita 100 children per request).
-
-## Se qualcosa va storto
-
-1. Guarda `migration.log` — gli errori specifici di una nota non bloccano il resto
-2. Per ri-migrare una singola nota: cancella la sua entry da `.migration_state.json` (chiave = path assoluto del .md) e rilancia
-3. Per ricominciare tutto: `--reset-state` (NON cancella le pagine già create su Notion, dovrai cancellarle a mano)
+- Converter Markdown minimal: heading, liste, code fence, paragrafi. Bold/italic inline restano come testo plain con `**` letterali (Notion li renderà comunque, ma non sempre perfettamente).
+- Tabelle Markdown vengono importate come paragrafi (Notion non supporta tabelle inline via API in modo banale).
+- Rate limit Notion ~3 req/s: lo script fa pause da 0.35s tra una nota e l'altra.
+- Note con >95 blocchi vengono splittate in più chiamate (Notion limita 100 children per request).
