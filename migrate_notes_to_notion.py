@@ -333,7 +333,7 @@ import urllib.error
 NOTION_API = "https://api.notion.com/v1"
 
 
-def notion_request(method, path, body=None):
+def notion_request(method, path, body=None, *, max_retries=5):
     if not NOTION_TOKEN:
         raise RuntimeError("NOTION_TOKEN env var not set")
     headers = {
@@ -343,7 +343,7 @@ def notion_request(method, path, body=None):
     }
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(NOTION_API + path, data=data, headers=headers, method=method)
-    for attempt in range(5):
+    for attempt in range(max_retries):
         try:
             with urllib.request.urlopen(req, timeout=60) as resp:
                 return json.loads(resp.read())
@@ -527,14 +527,43 @@ def notion_create_page(parent_page_id, title, blocks):
     return page_id
 
 
-def notion_get_existing_children(parent_page_id):
+def notion_get_existing_children(parent_page_id, *, tolerate_404=False, max_404_retries=4):
+    """Return {title: page_id} of direct child pages.
+
+    If tolerate_404=True (e.g. on a freshly-created page), retry briefly with
+    backoff on 404 responses, then return {} if it still fails. This handles
+    the propagation delay Notion has between creating a page via API and
+    being able to list its children.
+    """
     out = {}
     cursor = None
     while True:
         path = f"/blocks/{parent_page_id}/children?page_size=100"
         if cursor:
             path += f"&start_cursor={cursor}"
-        resp = notion_request("GET", path)
+        try:
+            resp = notion_request("GET", path)
+        except RuntimeError as e:
+            if tolerate_404 and " -> 404:" in str(e):
+                # Retry with backoff
+                got_through = False
+                for attempt in range(max_404_retries):
+                    wait = 1.5 * (attempt + 1)
+                    log(f"  404 reading children of fresh page, retrying in {wait:.1f}s "
+                        f"(attempt {attempt + 1}/{max_404_retries})", "WARN")
+                    time.sleep(wait)
+                    try:
+                        resp = notion_request("GET", path, max_retries=1)
+                        got_through = True
+                        break
+                    except RuntimeError as e2:
+                        if " -> 404:" not in str(e2):
+                            raise
+                if not got_through:
+                    log(f"  Still 404 after retries; assuming page is empty", "WARN")
+                    return out
+            else:
+                raise
         for block in resp.get("results", []):
             if block.get("type") == "child_page":
                 title = block["child_page"].get("title", "")
@@ -591,15 +620,7 @@ def discover_notes(notes_root):
 
 
 def resolve_single_file(file_arg, notes_root):
-    """Given the value of --file, return (top_folder_name, absolute_md_path).
-
-    Accepts either:
-      - absolute path: /Users/.../iCloud/Notes/2024-01-01-foo.md
-      - relative path: Notes/2024-01-01-foo.md  (relative to NOTES_ROOT)
-      - relative path: 2024-01-01-foo.md        (only inside one top-level folder)
-
-    Returns None if the file can't be located inside NOTES_ROOT.
-    """
+    """Given the value of --file, return (top_folder_name, absolute_md_path)."""
     p = Path(file_arg).expanduser()
     if p.is_absolute() and p.exists():
         try:
@@ -612,7 +633,6 @@ def resolve_single_file(file_arg, notes_root):
             return None
         return rel.parts[0], p.resolve()
 
-    # Relative path: try resolving against NOTES_ROOT
     candidate = (notes_root / p).resolve()
     if candidate.exists() and candidate.is_file():
         try:
@@ -625,10 +645,8 @@ def resolve_single_file(file_arg, notes_root):
             return None
         return rel.parts[0], candidate
 
-    # Bare filename: search across folders
     if p.name == file_arg.strip("/"):
         matches = list(notes_root.rglob(p.name))
-        # Filter out things inside skip folders
         matches = [
             m for m in matches
             if not any(part in SKIP_FOLDERS for part in m.relative_to(notes_root).parts)
@@ -655,9 +673,16 @@ def normalize_folder_name(name):
 # Migration
 # ---------------------------------------------------------------------------
 
-def ensure_folder_page(folder_name, parent_id, state, dry_run, top_level_existing):
+def ensure_folder_page(folder_name, parent_id, state, dry_run, top_level_existing,
+                        just_created_set):
+    """Returns (folder_page_id, was_just_created_now).
+
+    just_created_set: set tracking ids of folder pages created in *this run*,
+    so we can skip the children-listing API call (which can 404 for a few
+    seconds after creation due to propagation).
+    """
     if folder_name in state["folder_ids"]:
-        return state["folder_ids"][folder_name]
+        return state["folder_ids"][folder_name], False
 
     norm = normalize_folder_name(folder_name)
     for existing_title, existing_id in top_level_existing.items():
@@ -665,11 +690,11 @@ def ensure_folder_page(folder_name, parent_id, state, dry_run, top_level_existin
             log(f"  Reusing existing Notion folder page: '{existing_title}' (matched local '{folder_name}')")
             state["folder_ids"][folder_name] = existing_id
             save_state(state)
-            return existing_id
+            return existing_id, False
 
     log(f"Creating top-level folder page: {folder_name}")
     if dry_run:
-        return f"<would-create-{folder_name}>"
+        return f"<would-create-{folder_name}>", True
     body = {
         "parent": {"page_id": parent_id},
         "properties": {
@@ -680,8 +705,10 @@ def ensure_folder_page(folder_name, parent_id, state, dry_run, top_level_existin
     pid = resp["id"]
     state["folder_ids"][folder_name] = pid
     save_state(state)
-    time.sleep(0.4)
-    return pid
+    just_created_set.add(pid)
+    # Tiny wait to give Notion time to propagate the new page's permissions.
+    time.sleep(1.0)
+    return pid, True
 
 
 def migrate_note(md_path, folder_page_id, state, attachment_map, existing_titles, dry_run):
@@ -742,8 +769,7 @@ def main():
     parser.add_argument(
         "--force",
         action="store_true",
-        help="With --file: re-migrate even if the note is already in state or "
-             "exists with the same title on Notion (creates a duplicate page).",
+        help="With --file: re-migrate even if already in state or on Notion.",
     )
     parser.add_argument("--no-drive-api", action="store_true")
     parser.add_argument("--reset-state", action="store_true")
@@ -793,7 +819,6 @@ def main():
         except RuntimeError:
             return 1
 
-    # Build the list of notes to process: either --file (single), or all (with optional --folder filter)
     if args.file:
         resolved = resolve_single_file(args.file, NOTES_ROOT)
         if not resolved:
@@ -806,7 +831,6 @@ def main():
         log(f"Resolved --file to: {single_path}")
         log(f"  -> top-level folder: {top_folder}")
 
-        # Optionally invalidate state entries so this single note is reprocessed
         if args.force:
             abs_str = str(single_path.resolve())
             if abs_str in state["migrated_files"]:
@@ -835,18 +859,28 @@ def main():
     else:
         attachment_map = build_attachment_map_via_api(state)
 
+    just_created_folder_ids = set()
     summary = {"created": 0, "skipped": 0, "errors": 0}
+
     for folder_name, md_files in sorted(notes_by_folder.items()):
         log(f"=== Folder: {folder_name} ({len(md_files)} file{'s' if len(md_files) != 1 else ''}) ===")
-        folder_pid = ensure_folder_page(folder_name, parent_id, state, args.dry_run, top_level_existing)
+        folder_pid, was_just_created = ensure_folder_page(
+            folder_name, parent_id, state, args.dry_run,
+            top_level_existing, just_created_folder_ids,
+        )
 
         if not args.dry_run:
-            existing_titles = notion_get_existing_children(folder_pid)
-            log(f"  {len(existing_titles)} pages already on Notion in this folder")
+            if was_just_created:
+                # Brand-new folder — no existing children to fetch. Skip the API
+                # call (which can 404 for a few seconds due to propagation lag).
+                existing_titles = {}
+                log(f"  (newly-created folder, no existing children)")
+            else:
+                existing_titles = notion_get_existing_children(folder_pid, tolerate_404=False)
+                log(f"  {len(existing_titles)} pages already on Notion in this folder")
         else:
             existing_titles = {}
 
-        # With --file --force, also bypass the "title already on Notion" check
         if args.file and args.force:
             existing_titles = {}
 
