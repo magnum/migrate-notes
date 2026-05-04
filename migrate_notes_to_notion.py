@@ -17,6 +17,7 @@ USAGE:
        python3 migrate_notes_to_notion.py --parent-url "https://www.notion.so/..."
        python3 migrate_notes_to_notion.py --parent-url "..." --dry-run
        python3 migrate_notes_to_notion.py --parent-url "..." --folder Reference
+       python3 migrate_notes_to_notion.py --parent-url "..." --file path/to/note.md
 
     Alternative: set NOTION_NOTES_PARENT_URL env var instead of passing --parent-url.
 
@@ -156,18 +157,6 @@ def replace_attachments(content, attachment_map):
 # ---------------------------------------------------------------------------
 # Inline markdown parser -> list of Notion rich_text segments
 # ---------------------------------------------------------------------------
-# Notion rich_text segments look like:
-#   {"type": "text",
-#    "text": {"content": "...", "link": {"url": "..."} | null},
-#    "annotations": {"bold": bool, "italic": bool, "code": bool, ...}}
-#
-# We parse these inline patterns (in priority order):
-#   1. inline code: `foo`
-#   2. markdown link: [label](url)
-#   3. autolink: <https://...>
-#   4. bare URL: https://...
-#   5. bold: **text** or __text__
-#   6. italic: *text* or _text_
 
 INLINE_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)")
 AUTOLINK_RE = re.compile(r"<(https?://[^>\s]+)>")
@@ -178,7 +167,6 @@ ITALIC_RE = re.compile(r"(?<!\*)\*([^\*\n]+?)\*(?!\*)|(?<!_)_([^_\n]+?)_(?!_)")
 
 
 def _make_text(content, *, link=None, bold=False, italic=False, code=False):
-    """Build a Notion rich_text 'text' object."""
     if not content:
         content = ""
     obj = {
@@ -199,14 +187,9 @@ def _make_text(content, *, link=None, bold=False, italic=False, code=False):
 
 
 def _split_by_pattern(segments, pattern, factory):
-    """Walk an existing list of rich_text segments, find pattern matches in
-    *plain* (non-styled, non-linked) segments, and replace those matches with
-    the output of factory(match, bold, italic).
-    """
     out = []
     for seg in segments:
         ann = seg.get("annotations", {})
-        # Don't touch already-styled or already-linked segments
         if seg.get("text", {}).get("link") or ann.get("code"):
             out.append(seg)
             continue
@@ -225,49 +208,33 @@ def _split_by_pattern(segments, pattern, factory):
 
 
 def parse_inline(text):
-    """Convert a single line/paragraph of markdown into Notion rich_text segments."""
     if not text:
         return [_make_text("")]
-
     segments = [_make_text(text)]
-
-    # 1. inline code (highest priority — protects content inside backticks)
     segments = _split_by_pattern(
         segments, INLINE_CODE_RE,
         lambda m, b, i: [_make_text(m.group(1), code=True)],
     )
-
-    # 2. markdown links [label](url)
     segments = _split_by_pattern(
         segments, INLINE_LINK_RE,
         lambda m, b, i: [_make_text(m.group(1), link=m.group(2), bold=b, italic=i)],
     )
-
-    # 3. autolinks <https://...>
     segments = _split_by_pattern(
         segments, AUTOLINK_RE,
         lambda m, b, i: [_make_text(m.group(1), link=m.group(1), bold=b, italic=i)],
     )
-
-    # 4. bare URLs http(s)://...
     segments = _split_by_pattern(
         segments, BARE_URL_RE,
         lambda m, b, i: [_make_text(m.group(1), link=m.group(1), bold=b, italic=i)],
     )
-
-    # 5. bold (**text** or __text__)
     segments = _split_by_pattern(
         segments, BOLD_RE,
         lambda m, b, i: [_make_text(m.group(1) or m.group(2), bold=True, italic=i)],
     )
-
-    # 6. italic (*text* or _text_)
     segments = _split_by_pattern(
         segments, ITALIC_RE,
         lambda m, b, i: [_make_text(m.group(1) or m.group(2), bold=b, italic=True)],
     )
-
-    # Drop empty segments
     segments = [s for s in segments if s["text"]["content"]]
     return segments or [_make_text("")]
 
@@ -414,15 +381,12 @@ def notion_check_access(parent_id):
 
 
 def md_to_notion_blocks(content):
-    """Convert markdown to Notion blocks. Inline formatting (links, bold,
-    italic, code) is parsed by parse_inline() into proper rich_text segments."""
     blocks = []
     lines = content.split("\n")
     i = 0
     while i < len(lines):
         stripped = lines[i].rstrip()
 
-        # Code fence
         if stripped.startswith("```"):
             lang = stripped[3:].strip() or "plain text"
             i += 1
@@ -442,7 +406,6 @@ def md_to_notion_blocks(content):
             })
             continue
 
-        # Heading
         m = re.match(r"^(#{1,3})\s+(.+)$", stripped)
         if m:
             level = len(m.group(1))
@@ -455,7 +418,6 @@ def md_to_notion_blocks(content):
             i += 1
             continue
 
-        # To-do list (- [ ] / - [x])
         m = re.match(r"^[-*+]\s+\[([ xX])\]\s+(.+)$", stripped)
         if m:
             checked = m.group(1).lower() == "x"
@@ -468,7 +430,6 @@ def md_to_notion_blocks(content):
             i += 1
             continue
 
-        # Bulleted list
         m = re.match(r"^[-*+]\s+(.+)$", stripped)
         if m:
             text = m.group(1)
@@ -480,7 +441,6 @@ def md_to_notion_blocks(content):
             i += 1
             continue
 
-        # Numbered list
         m = re.match(r"^\d+\.\s+(.+)$", stripped)
         if m:
             text = m.group(1)
@@ -496,7 +456,6 @@ def md_to_notion_blocks(content):
             i += 1
             continue
 
-        # Paragraph
         para_lines = [stripped]
         i += 1
         while i < len(lines):
@@ -631,6 +590,63 @@ def discover_notes(notes_root):
     return out
 
 
+def resolve_single_file(file_arg, notes_root):
+    """Given the value of --file, return (top_folder_name, absolute_md_path).
+
+    Accepts either:
+      - absolute path: /Users/.../iCloud/Notes/2024-01-01-foo.md
+      - relative path: Notes/2024-01-01-foo.md  (relative to NOTES_ROOT)
+      - relative path: 2024-01-01-foo.md        (only inside one top-level folder)
+
+    Returns None if the file can't be located inside NOTES_ROOT.
+    """
+    p = Path(file_arg).expanduser()
+    if p.is_absolute() and p.exists():
+        try:
+            rel = p.resolve().relative_to(notes_root.resolve())
+        except ValueError:
+            log(f"--file path is outside NOTES_ROOT ({notes_root})", "ERROR")
+            return None
+        if len(rel.parts) < 2:
+            log(f"--file must be inside a top-level folder under NOTES_ROOT", "ERROR")
+            return None
+        return rel.parts[0], p.resolve()
+
+    # Relative path: try resolving against NOTES_ROOT
+    candidate = (notes_root / p).resolve()
+    if candidate.exists() and candidate.is_file():
+        try:
+            rel = candidate.relative_to(notes_root.resolve())
+        except ValueError:
+            log(f"--file resolved outside NOTES_ROOT", "ERROR")
+            return None
+        if len(rel.parts) < 2:
+            log(f"--file must be inside a top-level folder under NOTES_ROOT", "ERROR")
+            return None
+        return rel.parts[0], candidate
+
+    # Bare filename: search across folders
+    if p.name == file_arg.strip("/"):
+        matches = list(notes_root.rglob(p.name))
+        # Filter out things inside skip folders
+        matches = [
+            m for m in matches
+            if not any(part in SKIP_FOLDERS for part in m.relative_to(notes_root).parts)
+        ]
+        if len(matches) == 1:
+            m = matches[0].resolve()
+            rel = m.relative_to(notes_root.resolve())
+            return rel.parts[0], m
+        elif len(matches) > 1:
+            log(f"Filename '{p.name}' is ambiguous, found {len(matches)} matches:", "ERROR")
+            for m in matches:
+                log(f"  {m}", "ERROR")
+            return None
+
+    log(f"Could not locate --file {file_arg!r} under {notes_root}", "ERROR")
+    return None
+
+
 def normalize_folder_name(name):
     return name.strip().lower()
 
@@ -717,9 +733,25 @@ def main():
     parser.add_argument("--parent-url", help="Notion parent page URL or ID")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--folder", help="Only process this top-level folder")
+    parser.add_argument(
+        "--file",
+        help="Only migrate this single .md file. Accepts absolute path, "
+             "path relative to NOTES_ROOT, or a bare filename if unique. "
+             "Mutually exclusive with --folder.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="With --file: re-migrate even if the note is already in state or "
+             "exists with the same title on Notion (creates a duplicate page).",
+    )
     parser.add_argument("--no-drive-api", action="store_true")
     parser.add_argument("--reset-state", action="store_true")
     args = parser.parse_args()
+
+    if args.folder and args.file:
+        log("--folder and --file are mutually exclusive", "ERROR")
+        return 1
 
     parent_url_or_id = args.parent_url or DEFAULT_PARENT_URL
     if not parent_url_or_id:
@@ -742,6 +774,8 @@ def main():
     log(f"NOTES_ROOT = {NOTES_ROOT}")
     log(f"Parent page = {parent_id}  (from: {parent_url_or_id})")
     log(f"Mode: {'DRY RUN' if args.dry_run else 'LIVE'}")
+    if args.file:
+        log(f"Single-file mode: {args.file}")
 
     state = load_state()
     if state.get("parent_id") != parent_id:
@@ -759,15 +793,36 @@ def main():
         except RuntimeError:
             return 1
 
-    notes_by_folder = discover_notes(NOTES_ROOT)
-    if args.folder:
-        if args.folder not in notes_by_folder:
-            log(f"Folder '{args.folder}' not found. Available: {sorted(notes_by_folder)}", "ERROR")
+    # Build the list of notes to process: either --file (single), or all (with optional --folder filter)
+    if args.file:
+        resolved = resolve_single_file(args.file, NOTES_ROOT)
+        if not resolved:
             return 1
-        notes_by_folder = {args.folder: notes_by_folder[args.folder]}
+        top_folder, single_path = resolved
+        if top_folder in SKIP_FOLDERS:
+            log(f"--file is inside a skip folder ({top_folder})", "ERROR")
+            return 1
+        notes_by_folder = {top_folder: [single_path]}
+        log(f"Resolved --file to: {single_path}")
+        log(f"  -> top-level folder: {top_folder}")
+
+        # Optionally invalidate state entries so this single note is reprocessed
+        if args.force:
+            abs_str = str(single_path.resolve())
+            if abs_str in state["migrated_files"]:
+                log(f"--force: removing existing state entry for this file")
+                del state["migrated_files"][abs_str]
+                save_state(state)
+    else:
+        notes_by_folder = discover_notes(NOTES_ROOT)
+        if args.folder:
+            if args.folder not in notes_by_folder:
+                log(f"Folder '{args.folder}' not found. Available: {sorted(notes_by_folder)}", "ERROR")
+                return 1
+            notes_by_folder = {args.folder: notes_by_folder[args.folder]}
 
     total = sum(len(v) for v in notes_by_folder.values())
-    log(f"Found {total} .md files across {len(notes_by_folder)} folders")
+    log(f"Processing {total} .md file{'s' if total != 1 else ''} across {len(notes_by_folder)} folder{'s' if len(notes_by_folder) != 1 else ''}")
 
     if args.dry_run:
         top_level_existing = {}
@@ -782,13 +837,17 @@ def main():
 
     summary = {"created": 0, "skipped": 0, "errors": 0}
     for folder_name, md_files in sorted(notes_by_folder.items()):
-        log(f"=== Folder: {folder_name} ({len(md_files)} files) ===")
+        log(f"=== Folder: {folder_name} ({len(md_files)} file{'s' if len(md_files) != 1 else ''}) ===")
         folder_pid = ensure_folder_page(folder_name, parent_id, state, args.dry_run, top_level_existing)
 
         if not args.dry_run:
             existing_titles = notion_get_existing_children(folder_pid)
             log(f"  {len(existing_titles)} pages already on Notion in this folder")
         else:
+            existing_titles = {}
+
+        # With --file --force, also bypass the "title already on Notion" check
+        if args.file and args.force:
             existing_titles = {}
 
         for md_path in sorted(md_files, key=lambda p: p.name):
