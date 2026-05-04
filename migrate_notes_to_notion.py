@@ -240,6 +240,76 @@ def parse_inline(text):
 
 
 # ---------------------------------------------------------------------------
+# Markdown table parsing
+# ---------------------------------------------------------------------------
+
+TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$")
+
+
+def _split_table_row(line):
+    """Split a markdown pipe-table row into cell strings.
+
+    Handles optional leading/trailing pipes and ignores empty edge cells produced
+    by them. Does NOT support escaped pipes (\\|) since iCloud notes don't use them.
+    """
+    s = line.strip()
+    # Strip a single leading/trailing pipe if present
+    if s.startswith("|"):
+        s = s[1:]
+    if s.endswith("|"):
+        s = s[:-1]
+    return [c.strip() for c in s.split("|")]
+
+
+def _is_table_header(lines, i):
+    """Return number of columns if lines[i] and lines[i+1] form a valid pipe-table
+    header + separator, else 0.
+    """
+    if i + 1 >= len(lines):
+        return 0
+    header = lines[i].rstrip()
+    sep = lines[i + 1].rstrip()
+    if "|" not in header or "|" not in sep:
+        return 0
+    if not TABLE_SEPARATOR_RE.match(sep):
+        return 0
+    header_cells = _split_table_row(header)
+    sep_cells = _split_table_row(sep)
+    if len(header_cells) < 2 or len(header_cells) != len(sep_cells):
+        return 0
+    return len(header_cells)
+
+
+def _build_table_block(rows, n_cols, has_header=True):
+    """Build a Notion table block from a list of cell-string lists.
+
+    rows: [[cell_text, ...], ...]   length of each inner list = n_cols
+    """
+    table_rows = []
+    for cells in rows:
+        # Pad / truncate to n_cols
+        cells = (cells + [""] * n_cols)[:n_cols]
+        table_rows.append({
+            "object": "block",
+            "type": "table_row",
+            "table_row": {
+                "cells": [parse_inline(c) for c in cells],
+            },
+        })
+
+    return {
+        "object": "block",
+        "type": "table",
+        "table": {
+            "table_width": n_cols,
+            "has_column_header": bool(has_header),
+            "has_row_header": False,
+            "children": table_rows,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
 # Drive attachments index
 # ---------------------------------------------------------------------------
 
@@ -387,6 +457,7 @@ def md_to_notion_blocks(content):
     while i < len(lines):
         stripped = lines[i].rstrip()
 
+        # Code fence
         if stripped.startswith("```"):
             lang = stripped[3:].strip() or "plain text"
             i += 1
@@ -406,6 +477,24 @@ def md_to_notion_blocks(content):
             })
             continue
 
+        # Markdown table: header row | --- separator | data rows
+        n_cols = _is_table_header(lines, i)
+        if n_cols:
+            header_cells = _split_table_row(lines[i])
+            i += 2  # skip header + separator
+            data_rows = []
+            while i < len(lines):
+                t = lines[i].rstrip()
+                # Stop the table at first non-pipe line (or empty line)
+                if not t.strip() or "|" not in t:
+                    break
+                row_cells = _split_table_row(t)
+                data_rows.append(row_cells)
+                i += 1
+            blocks.append(_build_table_block([header_cells] + data_rows, n_cols, has_header=True))
+            continue
+
+        # Heading
         m = re.match(r"^(#{1,3})\s+(.+)$", stripped)
         if m:
             level = len(m.group(1))
@@ -418,6 +507,7 @@ def md_to_notion_blocks(content):
             i += 1
             continue
 
+        # To-do list
         m = re.match(r"^[-*+]\s+\[([ xX])\]\s+(.+)$", stripped)
         if m:
             checked = m.group(1).lower() == "x"
@@ -430,6 +520,7 @@ def md_to_notion_blocks(content):
             i += 1
             continue
 
+        # Bulleted list
         m = re.match(r"^[-*+]\s+(.+)$", stripped)
         if m:
             text = m.group(1)
@@ -441,6 +532,7 @@ def md_to_notion_blocks(content):
             i += 1
             continue
 
+        # Numbered list
         m = re.match(r"^\d+\.\s+(.+)$", stripped)
         if m:
             text = m.group(1)
@@ -456,6 +548,7 @@ def md_to_notion_blocks(content):
             i += 1
             continue
 
+        # Paragraph
         para_lines = [stripped]
         i += 1
         while i < len(lines):
@@ -465,6 +558,9 @@ def md_to_notion_blocks(content):
             if re.match(r"^(#{1,3})\s+", nxt) or nxt.startswith("```"):
                 break
             if re.match(r"^[-*+]\s+", nxt) or re.match(r"^\d+\.\s+", nxt):
+                break
+            # Don't merge into paragraph if a table is starting at the next line
+            if _is_table_header(lines, i):
                 break
             para_lines.append(nxt)
             i += 1
@@ -528,13 +624,6 @@ def notion_create_page(parent_page_id, title, blocks):
 
 
 def notion_get_existing_children(parent_page_id, *, tolerate_404=False, max_404_retries=4):
-    """Return {title: page_id} of direct child pages.
-
-    If tolerate_404=True (e.g. on a freshly-created page), retry briefly with
-    backoff on 404 responses, then return {} if it still fails. This handles
-    the propagation delay Notion has between creating a page via API and
-    being able to list its children.
-    """
     out = {}
     cursor = None
     while True:
@@ -545,12 +634,10 @@ def notion_get_existing_children(parent_page_id, *, tolerate_404=False, max_404_
             resp = notion_request("GET", path)
         except RuntimeError as e:
             if tolerate_404 and " -> 404:" in str(e):
-                # Retry with backoff
                 got_through = False
                 for attempt in range(max_404_retries):
                     wait = 1.5 * (attempt + 1)
-                    log(f"  404 reading children of fresh page, retrying in {wait:.1f}s "
-                        f"(attempt {attempt + 1}/{max_404_retries})", "WARN")
+                    log(f"  404 reading children of fresh page, retrying in {wait:.1f}s", "WARN")
                     time.sleep(wait)
                     try:
                         resp = notion_request("GET", path, max_retries=1)
@@ -620,7 +707,6 @@ def discover_notes(notes_root):
 
 
 def resolve_single_file(file_arg, notes_root):
-    """Given the value of --file, return (top_folder_name, absolute_md_path)."""
     p = Path(file_arg).expanduser()
     if p.is_absolute() and p.exists():
         try:
@@ -675,12 +761,6 @@ def normalize_folder_name(name):
 
 def ensure_folder_page(folder_name, parent_id, state, dry_run, top_level_existing,
                         just_created_set):
-    """Returns (folder_page_id, was_just_created_now).
-
-    just_created_set: set tracking ids of folder pages created in *this run*,
-    so we can skip the children-listing API call (which can 404 for a few
-    seconds after creation due to propagation).
-    """
     if folder_name in state["folder_ids"]:
         return state["folder_ids"][folder_name], False
 
@@ -706,7 +786,6 @@ def ensure_folder_page(folder_name, parent_id, state, dry_run, top_level_existin
     state["folder_ids"][folder_name] = pid
     save_state(state)
     just_created_set.add(pid)
-    # Tiny wait to give Notion time to propagate the new page's permissions.
     time.sleep(1.0)
     return pid, True
 
@@ -763,14 +842,9 @@ def main():
     parser.add_argument(
         "--file",
         help="Only migrate this single .md file. Accepts absolute path, "
-             "path relative to NOTES_ROOT, or a bare filename if unique. "
-             "Mutually exclusive with --folder.",
+             "path relative to NOTES_ROOT, or a bare filename if unique.",
     )
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="With --file: re-migrate even if already in state or on Notion.",
-    )
+    parser.add_argument("--force", action="store_true")
     parser.add_argument("--no-drive-api", action="store_true")
     parser.add_argument("--reset-state", action="store_true")
     args = parser.parse_args()
@@ -871,8 +945,6 @@ def main():
 
         if not args.dry_run:
             if was_just_created:
-                # Brand-new folder — no existing children to fetch. Skip the API
-                # call (which can 404 for a few seconds due to propagation lag).
                 existing_titles = {}
                 log(f"  (newly-created folder, no existing children)")
             else:
