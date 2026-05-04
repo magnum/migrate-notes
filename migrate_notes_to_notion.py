@@ -67,7 +67,7 @@ DRIVE_ROOT_FOLDER_ID = os.environ.get(
 # Logging
 # ---------------------------------------------------------------------------
 
-def log(msg: str, level: str = "INFO") -> None:
+def log(msg, level="INFO"):
     line = f"[{time.strftime('%H:%M:%S')}] {level:5s} {msg}"
     print(line)
     with LOG_FILE.open("a") as f:
@@ -84,7 +84,7 @@ UUID_RE = re.compile(
 )
 
 
-def extract_notion_id(url_or_id: str) -> str:
+def extract_notion_id(url_or_id):
     s = url_or_id.strip()
     if not s:
         raise ValueError("Empty Notion URL/ID")
@@ -102,7 +102,7 @@ def extract_notion_id(url_or_id: str) -> str:
 # State (idempotency)
 # ---------------------------------------------------------------------------
 
-def load_state() -> dict:
+def load_state():
     if STATE_FILE.exists():
         try:
             return json.loads(STATE_FILE.read_text())
@@ -116,7 +116,7 @@ def load_state() -> dict:
     }
 
 
-def save_state(state: dict) -> None:
+def save_state(state):
     STATE_FILE.write_text(json.dumps(state, indent=2))
 
 
@@ -130,13 +130,13 @@ ATTACHMENT_LINK_RE = re.compile(r"!\[([^\]]*)\]\((images|attachments)/([^)]+)\)"
 PLAIN_ATTACHMENT_RE = re.compile(r"\[([^\]]*)\]\((images|attachments)/([^)]+)\)")
 
 
-def clean_icloud_md(content: str) -> str:
+def clean_icloud_md(content):
     content = ESCAPE_RE.sub(r"\1", content)
     content = TRAILING_DOUBLE_SPACE_RE.sub("", content)
     return content
 
 
-def replace_attachments(content: str, attachment_map: dict) -> str:
+def replace_attachments(content, attachment_map):
     def repl(m):
         alt = m.group(1)
         path = m.group(3)
@@ -146,7 +146,7 @@ def replace_attachments(content: str, attachment_map: dict) -> str:
         if drive_id:
             url = f"https://drive.google.com/file/d/{drive_id}/view"
             return f"📎 [{label}]({url})"
-        return f"📎 {label} _(allegato non trovato su Drive)_"
+        return f"📎 {label} (allegato non trovato su Drive)"
 
     content = ATTACHMENT_LINK_RE.sub(repl, content)
     content = PLAIN_ATTACHMENT_RE.sub(repl, content)
@@ -154,10 +154,129 @@ def replace_attachments(content: str, attachment_map: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Inline markdown parser -> list of Notion rich_text segments
+# ---------------------------------------------------------------------------
+# Notion rich_text segments look like:
+#   {"type": "text",
+#    "text": {"content": "...", "link": {"url": "..."} | null},
+#    "annotations": {"bold": bool, "italic": bool, "code": bool, ...}}
+#
+# We parse these inline patterns (in priority order):
+#   1. inline code: `foo`
+#   2. markdown link: [label](url)
+#   3. autolink: <https://...>
+#   4. bare URL: https://...
+#   5. bold: **text** or __text__
+#   6. italic: *text* or _text_
+
+INLINE_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)")
+AUTOLINK_RE = re.compile(r"<(https?://[^>\s]+)>")
+BARE_URL_RE = re.compile(r"(?<![\(<\w/])(https?://[^\s<>\"')]+[^\s<>\"')\.,;:])")
+INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
+BOLD_RE = re.compile(r"\*\*([^\*\n]+?)\*\*|__([^_\n]+?)__")
+ITALIC_RE = re.compile(r"(?<!\*)\*([^\*\n]+?)\*(?!\*)|(?<!_)_([^_\n]+?)_(?!_)")
+
+
+def _make_text(content, *, link=None, bold=False, italic=False, code=False):
+    """Build a Notion rich_text 'text' object."""
+    if not content:
+        content = ""
+    obj = {
+        "type": "text",
+        "text": {"content": content[:2000]},
+        "annotations": {
+            "bold": bool(bold),
+            "italic": bool(italic),
+            "strikethrough": False,
+            "underline": False,
+            "code": bool(code),
+            "color": "default",
+        },
+    }
+    if link:
+        obj["text"]["link"] = {"url": link[:2000]}
+    return obj
+
+
+def _split_by_pattern(segments, pattern, factory):
+    """Walk an existing list of rich_text segments, find pattern matches in
+    *plain* (non-styled, non-linked) segments, and replace those matches with
+    the output of factory(match, bold, italic).
+    """
+    out = []
+    for seg in segments:
+        ann = seg.get("annotations", {})
+        # Don't touch already-styled or already-linked segments
+        if seg.get("text", {}).get("link") or ann.get("code"):
+            out.append(seg)
+            continue
+        text = seg["text"]["content"]
+        bold = ann.get("bold", False)
+        italic = ann.get("italic", False)
+        last = 0
+        for m in pattern.finditer(text):
+            if m.start() > last:
+                out.append(_make_text(text[last:m.start()], bold=bold, italic=italic))
+            out.extend(factory(m, bold, italic))
+            last = m.end()
+        if last < len(text):
+            out.append(_make_text(text[last:], bold=bold, italic=italic))
+    return out
+
+
+def parse_inline(text):
+    """Convert a single line/paragraph of markdown into Notion rich_text segments."""
+    if not text:
+        return [_make_text("")]
+
+    segments = [_make_text(text)]
+
+    # 1. inline code (highest priority — protects content inside backticks)
+    segments = _split_by_pattern(
+        segments, INLINE_CODE_RE,
+        lambda m, b, i: [_make_text(m.group(1), code=True)],
+    )
+
+    # 2. markdown links [label](url)
+    segments = _split_by_pattern(
+        segments, INLINE_LINK_RE,
+        lambda m, b, i: [_make_text(m.group(1), link=m.group(2), bold=b, italic=i)],
+    )
+
+    # 3. autolinks <https://...>
+    segments = _split_by_pattern(
+        segments, AUTOLINK_RE,
+        lambda m, b, i: [_make_text(m.group(1), link=m.group(1), bold=b, italic=i)],
+    )
+
+    # 4. bare URLs http(s)://...
+    segments = _split_by_pattern(
+        segments, BARE_URL_RE,
+        lambda m, b, i: [_make_text(m.group(1), link=m.group(1), bold=b, italic=i)],
+    )
+
+    # 5. bold (**text** or __text__)
+    segments = _split_by_pattern(
+        segments, BOLD_RE,
+        lambda m, b, i: [_make_text(m.group(1) or m.group(2), bold=True, italic=i)],
+    )
+
+    # 6. italic (*text* or _text_)
+    segments = _split_by_pattern(
+        segments, ITALIC_RE,
+        lambda m, b, i: [_make_text(m.group(1) or m.group(2), bold=b, italic=True)],
+    )
+
+    # Drop empty segments
+    segments = [s for s in segments if s["text"]["content"]]
+    return segments or [_make_text("")]
+
+
+# ---------------------------------------------------------------------------
 # Drive attachments index
 # ---------------------------------------------------------------------------
 
-def build_attachment_map_via_api(state: dict) -> dict:
+def build_attachment_map_via_api(state):
     cached = state.get("drive_attachments", {})
     if cached:
         log(f"Using cached attachment map ({len(cached)} entries)")
@@ -295,12 +414,15 @@ def notion_check_access(parent_id):
 
 
 def md_to_notion_blocks(content):
+    """Convert markdown to Notion blocks. Inline formatting (links, bold,
+    italic, code) is parsed by parse_inline() into proper rich_text segments."""
     blocks = []
     lines = content.split("\n")
     i = 0
     while i < len(lines):
         stripped = lines[i].rstrip()
 
+        # Code fence
         if stripped.startswith("```"):
             lang = stripped[3:].strip() or "plain text"
             i += 1
@@ -320,6 +442,7 @@ def md_to_notion_blocks(content):
             })
             continue
 
+        # Heading
         m = re.match(r"^(#{1,3})\s+(.+)$", stripped)
         if m:
             level = len(m.group(1))
@@ -327,35 +450,44 @@ def md_to_notion_blocks(content):
             blocks.append({
                 "object": "block",
                 "type": f"heading_{level}",
-                f"heading_{level}": {
-                    "rich_text": [{"type": "text", "text": {"content": text[:2000]}}]
-                },
+                f"heading_{level}": {"rich_text": parse_inline(text)},
             })
             i += 1
             continue
 
+        # To-do list (- [ ] / - [x])
+        m = re.match(r"^[-*+]\s+\[([ xX])\]\s+(.+)$", stripped)
+        if m:
+            checked = m.group(1).lower() == "x"
+            text = m.group(2)
+            blocks.append({
+                "object": "block",
+                "type": "to_do",
+                "to_do": {"rich_text": parse_inline(text), "checked": checked},
+            })
+            i += 1
+            continue
+
+        # Bulleted list
         m = re.match(r"^[-*+]\s+(.+)$", stripped)
         if m:
             text = m.group(1)
             blocks.append({
                 "object": "block",
                 "type": "bulleted_list_item",
-                "bulleted_list_item": {
-                    "rich_text": [{"type": "text", "text": {"content": text[:2000]}}]
-                },
+                "bulleted_list_item": {"rich_text": parse_inline(text)},
             })
             i += 1
             continue
 
+        # Numbered list
         m = re.match(r"^\d+\.\s+(.+)$", stripped)
         if m:
             text = m.group(1)
             blocks.append({
                 "object": "block",
                 "type": "numbered_list_item",
-                "numbered_list_item": {
-                    "rich_text": [{"type": "text", "text": {"content": text[:2000]}}]
-                },
+                "numbered_list_item": {"rich_text": parse_inline(text)},
             })
             i += 1
             continue
@@ -364,6 +496,7 @@ def md_to_notion_blocks(content):
             i += 1
             continue
 
+        # Paragraph
         para_lines = [stripped]
         i += 1
         while i < len(lines):
@@ -377,13 +510,11 @@ def md_to_notion_blocks(content):
             para_lines.append(nxt)
             i += 1
         para_text = "\n".join(para_lines)
-        for chunk in _split_chunks(para_text, 2000):
+        for chunk in _split_chunks(para_text, 1900):
             blocks.append({
                 "object": "block",
                 "type": "paragraph",
-                "paragraph": {
-                    "rich_text": [{"type": "text", "text": {"content": chunk}}]
-                },
+                "paragraph": {"rich_text": parse_inline(chunk)},
             })
 
     return blocks
@@ -583,21 +714,16 @@ def main():
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument(
-        "--parent-url",
-        help="URL (or raw ID) of the Notion page that holds the top-level folders. "
-             "Can also be set via NOTION_NOTES_PARENT_URL env var.",
-    )
-    parser.add_argument("--dry-run", action="store_true", help="Preview without writing to Notion")
-    parser.add_argument("--folder", help="Only process this top-level folder name")
-    parser.add_argument("--no-drive-api", action="store_true", help="Skip Drive API attachment lookup")
-    parser.add_argument("--reset-state", action="store_true", help="Delete state file and start fresh")
+    parser.add_argument("--parent-url", help="Notion parent page URL or ID")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--folder", help="Only process this top-level folder")
+    parser.add_argument("--no-drive-api", action="store_true")
+    parser.add_argument("--reset-state", action="store_true")
     args = parser.parse_args()
 
     parent_url_or_id = args.parent_url or DEFAULT_PARENT_URL
     if not parent_url_or_id:
-        log("Missing parent page. Pass --parent-url 'https://www.notion.so/...' "
-            "or set NOTION_NOTES_PARENT_URL env var.", "ERROR")
+        log("Missing parent page. Pass --parent-url or set NOTION_NOTES_PARENT_URL", "ERROR")
         return 1
     try:
         parent_id = extract_notion_id(parent_url_or_id)
@@ -618,13 +744,10 @@ def main():
     log(f"Mode: {'DRY RUN' if args.dry_run else 'LIVE'}")
 
     state = load_state()
-    # Reset folder + migrated cache if parent_id has changed (or was never set
-    # and there's stale folder data from a previous broken run)
     if state.get("parent_id") != parent_id:
         prev = state.get("parent_id")
         if state.get("folder_ids") or state.get("migrated_files"):
-            log(f"Parent changed (was {prev!r}, now {parent_id!r}); "
-                f"resetting folder & migration caches", "WARN")
+            log(f"Parent changed (was {prev!r}, now {parent_id!r}); resetting folder & migration caches", "WARN")
         state["folder_ids"] = {}
         state["migrated_files"] = {}
     state["parent_id"] = parent_id
