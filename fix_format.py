@@ -6,11 +6,12 @@ Walks the Notion page tree starting from --parent-url (or processes a single
 page via --url) and applies these fixups to every block with rich_text:
 
   1. <u>...</u>   ->  underline annotation
-  2. [email@domain](mailto:email@domain)  ->  proper mailto: link
-  3. Blocks that contain only "##" (or other heading markers as plain text)
+  2. ~~...~~ (markdown)  ->  strikethrough annotation
+  3. [email@domain](mailto:email@domain)  ->  proper mailto: link
+  4. Blocks that contain only "##" (or other heading markers as plain text)
      are deleted (these are stray heading-marker leftovers from iCloud export)
-  4. Code blocks: remove extra blank lines introduced during migration
-  5. Consecutive code blocks under the same parent are merged into one
+  5. Code blocks: remove extra blank lines introduced during migration
+  6. Consecutive code blocks under the same parent are merged into one
      (contents joined with a single newline)
 
 USAGE:
@@ -27,6 +28,7 @@ USAGE:
 
     # Skip individual fixes if needed
     python3 fix_format.py --parent-url "..." --no-underline --no-mailto
+    python3 fix_format.py --parent-url "..." --no-strike-tilde
 
 REQUIRED NOTION PERMISSIONS:
     The integration whose token is in NOTION_TOKEN must have access to the
@@ -39,6 +41,8 @@ LIMITATIONS:
       (common when Notion autolinks the URL in the middle run only).
       If the merged text would exceed 2000 characters per segment, or two
       different link URLs meet, tags may still be reported as unbalanced.
+    - ``~~...~~`` must form complete pairs in the coalesced text; odd ``~~`` or
+      pairs split by incompatible styling/links are left as-is and skipped.
     - The "delete stray heading marker" fix only matches blocks that consist
       ENTIRELY of "##", "###", "#", optionally surrounded by whitespace.
 """
@@ -68,6 +72,9 @@ RICH_TEXT_BLOCK_TYPES = {
 
 UNDERLINE_TAG_RE = re.compile(r"<u>(.*?)</u>", re.DOTALL | re.IGNORECASE)
 UNBALANCED_TAG_RE = re.compile(r"<u>|</u>", re.IGNORECASE)
+
+# Markdown strikethrough: ~~Green opaque~~ -> strikethrough annotation
+STRIKETHROUGH_TILDE_RE = re.compile(r"~~(.*?)~~", re.DOTALL)
 
 # Email at simple grammar: local-part@domain.tld - good enough for our notes
 EMAIL_BASIC = r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}"
@@ -164,9 +171,9 @@ def get_block_children(block_id):
 # ---------------------------------------------------------------------------
 
 def _make_text_segment(content, *, base_segment, override_link=None,
-                       override_underline=None):
+                       override_underline=None, override_strikethrough=None):
     """Clone the structure of a base rich_text segment with new content and
-    optionally overridden link / underline annotation."""
+    optionally overridden link / underline / strikethrough annotation."""
     if not content:
         return None
     out = {
@@ -185,6 +192,8 @@ def _make_text_segment(content, *, base_segment, override_link=None,
         out["text"]["link"] = base_link
     if override_underline is not None:
         out["annotations"]["underline"] = override_underline
+    if override_strikethrough is not None:
+        out["annotations"]["strikethrough"] = override_strikethrough
     return out
 
 
@@ -204,14 +213,13 @@ def _link_url(seg):
     return (link or {}).get("url") if link else None
 
 
-def _style_key_no_underline(seg):
-    """Style-only key (bold/italic/code/color). Omit underline so runs split by
-    Notion's native underline flag still merge for ``<u>...</u>`` cleanup."""
+def _merge_style_key(seg):
+    """Bold/italic/code/color only. Omit underline and strikethrough so runs
+    split across ``<u>`` / ``~~`` / native flags still coalesce."""
     ann = seg.get("annotations") or {}
     return (
         bool(ann.get("bold")),
         bool(ann.get("italic")),
-        bool(ann.get("strikethrough")),
         bool(ann.get("code")),
         ann.get("color", "default"),
     )
@@ -256,15 +264,15 @@ def _copy_text_segment_structure(seg):
 
 
 def coalesce_adjacent_text_segments(rich_text):
-    """Join consecutive text runs so literal ``<u>...</u>`` can be parsed.
+    """Join consecutive text runs so literal ``<u>...</u>`` and ``~~..~~`` parse.
 
     Merges adjacent ``text`` segments when:
-    - bold/italic/strikethrough/code/color match;
+    - bold/italic/code/color match;
     - link URLs are equal, or exactly one side has a link (keep that URL);
     - combined length ≤ 2000 (Notion limit).
 
-    ``underline`` may differ between runs (Notion vs HTML export). Native
-    underline is merged with OR onto the left run before ``<u>`` stripping.
+    ``underline`` / ``strikethrough`` may differ between runs; both are merged
+    with OR onto the left run before marker stripping.
     """
     if not rich_text:
         return rich_text
@@ -279,11 +287,7 @@ def coalesce_adjacent_text_segments(rich_text):
             ok_links, merged_url = _compatible_link_merge(
                 _link_url(prev_seg), _link_url(seg)
             )
-            if (
-                ok_links
-                and _style_key_no_underline(prev_seg)
-                == _style_key_no_underline(seg)
-            ):
+            if ok_links and _merge_style_key(prev_seg) == _merge_style_key(seg):
                 prev = (prev_seg.get("text") or {}).get("content", "") or ""
                 if len(prev) + len(chunk) <= 2000:
                     prev_seg["text"]["content"] = prev + chunk
@@ -301,6 +305,9 @@ def coalesce_adjacent_text_segments(rich_text):
                     merged_ann["underline"] = bool(pa.get("underline")) or bool(
                         sa.get("underline")
                     )
+                    merged_ann["strikethrough"] = bool(
+                        pa.get("strikethrough")
+                    ) or bool(sa.get("strikethrough"))
                     prev_seg["annotations"] = merged_ann
                     if merged_url:
                         prev_seg.setdefault("text", {})["link"] = {
@@ -346,6 +353,49 @@ def transform_underline(segment):
 
     rebuilt = "".join((s.get("text") or {}).get("content", "") for s in out)
     if UNBALANCED_TAG_RE.search(rebuilt):
+        return [segment], "unbalanced"
+    return out, "replaced"
+
+
+# ---------------------------------------------------------------------------
+# ~~...~~ (markdown) -> strikethrough annotation
+# ---------------------------------------------------------------------------
+
+def transform_strikethrough_tilde(segment):
+    """Return (new_segments, status). status: 'no_change' | 'replaced' | 'unbalanced'."""
+    if segment.get("type") != "text":
+        return [segment], "no_change"
+    ann = segment.get("annotations", {}) or {}
+    if (segment.get("text") or {}).get("link") or ann.get("code"):
+        return [segment], "no_change"
+    content = (segment.get("text") or {}).get("content", "")
+    if "~~" not in content:
+        return [segment], "no_change"
+
+    out = []
+    last = 0
+    for m in STRIKETHROUGH_TILDE_RE.finditer(content):
+        if m.start() > last:
+            seg = _make_text_segment(content[last:m.start()], base_segment=segment)
+            if seg:
+                out.append(seg)
+        inner = m.group(1)
+        if inner:
+            seg = _make_text_segment(
+                inner,
+                base_segment=segment,
+                override_strikethrough=True,
+            )
+            if seg:
+                out.append(seg)
+        last = m.end()
+    if last < len(content):
+        seg = _make_text_segment(content[last:], base_segment=segment)
+        if seg:
+            out.append(seg)
+
+    rebuilt = "".join((s.get("text") or {}).get("content", "") for s in out)
+    if "~~" in rebuilt:
         return [segment], "unbalanced"
     return out, "replaced"
 
@@ -398,12 +448,12 @@ def transform_mailto(segment):
 # Combined rich_text transformer
 # ---------------------------------------------------------------------------
 
-def transform_rich_text(rich_text, *, do_underline=True, do_mailto=True):
+def transform_rich_text(rich_text, *, do_underline=True, do_strike_tilde=True, do_mailto=True):
     """Apply all enabled rich_text fixes. Returns (new_rt, fix_counts, unbalanced)."""
     if not rich_text:
-        return rich_text, {"underline": 0, "mailto": 0}, False
+        return rich_text, {"underline": 0, "strikethrough": 0, "mailto": 0}, False
     rich_text = coalesce_adjacent_text_segments(rich_text)
-    counts = {"underline": 0, "mailto": 0}
+    counts = {"underline": 0, "strikethrough": 0, "mailto": 0}
     unbalanced = False
 
     # Stage 1: underline
@@ -413,6 +463,18 @@ def transform_rich_text(rich_text, *, do_underline=True, do_mailto=True):
             new_segs, status = transform_underline(seg)
             if status == "replaced":
                 counts["underline"] += 1
+            elif status == "unbalanced":
+                unbalanced = True
+            staged.extend(new_segs)
+        rich_text = staged
+
+    # Stage 1b: ~~strikethrough~~
+    if do_strike_tilde:
+        staged = []
+        for seg in rich_text:
+            new_segs, status = transform_strikethrough_tilde(seg)
+            if status == "replaced":
+                counts["strikethrough"] += 1
             elif status == "unbalanced":
                 unbalanced = True
             staged.extend(new_segs)
@@ -634,19 +696,32 @@ def fix_blocks_under(parent_id, depth, max_depth, stats, dry_run, opts):
             new_rt, counts, unbalanced = transform_rich_text(
                 rt,
                 do_underline=opts["do_underline"],
+                do_strike_tilde=opts["do_strike_tilde"],
                 do_mailto=opts["do_mailto"],
             )
             if unbalanced:
                 stats["unbalanced"] += 1
-                log(f"  ! unbalanced <u> in {btype} block {block['id']}, skipping", "WARN")
-            total_fixes = counts["underline"] + counts["mailto"]
+                log(
+                    f"  ! unbalanced <u> or ~~ in {btype} block {block['id']}, skipping",
+                    "WARN",
+                )
+            total_fixes = (
+                counts["underline"] + counts["strikethrough"] + counts["mailto"]
+            )
             if total_fixes > 0:
                 stats["fixed_underline"] += counts["underline"]
+                stats["fixed_strikethrough"] += counts["strikethrough"]
                 stats["fixed_mailto"] += counts["mailto"]
-                preview = "".join((s.get("text") or {}).get("content", "") for s in new_rt)[:80]
+                preview = "".join((s.get("text") or {}).get("content", "") for s in new_rt)[
+                    :80
+                ]
                 tag = []
-                if counts["underline"]: tag.append(f"u×{counts['underline']}")
-                if counts["mailto"]: tag.append(f"mail×{counts['mailto']}")
+                if counts["underline"]:
+                    tag.append(f"u×{counts['underline']}")
+                if counts["strikethrough"]:
+                    tag.append(f"strike×{counts['strikethrough']}")
+                if counts["mailto"]:
+                    tag.append(f"mail×{counts['mailto']}")
                 log(f"  ~ {btype} [{','.join(tag)}]: {preview!r}")
                 if not dry_run:
                     try:
@@ -681,27 +756,36 @@ def fix_blocks_under(parent_id, depth, max_depth, stats, dry_run, opts):
                 new_cells = []
                 row_changed = False
                 row_unbalanced = False
-                row_counts = {"underline": 0, "mailto": 0}
+                row_counts = {"underline": 0, "strikethrough": 0, "mailto": 0}
                 for cell in cells:
                     new_cell, counts, unbalanced = transform_rich_text(
                         cell,
                         do_underline=opts["do_underline"],
+                        do_strike_tilde=opts["do_strike_tilde"],
                         do_mailto=opts["do_mailto"],
                     )
                     if unbalanced:
                         row_unbalanced = True
-                    if counts["underline"] or counts["mailto"]:
+                    if counts["underline"] or counts["strikethrough"] or counts["mailto"]:
                         row_changed = True
                         row_counts["underline"] += counts["underline"]
+                        row_counts["strikethrough"] += counts["strikethrough"]
                         row_counts["mailto"] += counts["mailto"]
                     new_cells.append(new_cell)
                 if row_unbalanced:
                     stats["unbalanced"] += 1
-                    log(f"  ! unbalanced <u> in table row {row['id']}, skipping", "WARN")
+                    log(
+                        f"  ! unbalanced <u> or ~~ in table row {row['id']}, skipping",
+                        "WARN",
+                    )
                 elif row_changed:
                     stats["fixed_underline"] += row_counts["underline"]
+                    stats["fixed_strikethrough"] += row_counts["strikethrough"]
                     stats["fixed_mailto"] += row_counts["mailto"]
-                    log(f"  ~ table_row {row['id']}: u×{row_counts['underline']}, mail×{row_counts['mailto']}")
+                    log(
+                        f"  ~ table_row {row['id']}: u×{row_counts['underline']}, "
+                        f"strike×{row_counts['strikethrough']}, mail×{row_counts['mailto']}"
+                    )
                     if not dry_run:
                         try:
                             update_table_row(row, new_cells)
@@ -766,6 +850,11 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Scan only, don't write")
     parser.add_argument("--max-depth", type=int, default=None, help="Max recursion depth (only with --parent-url)")
     parser.add_argument("--no-underline", action="store_true", help="Disable <u>...</u> -> underline fix")
+    parser.add_argument(
+        "--no-strike-tilde",
+        action="store_true",
+        help="Disable ~~...~~ -> strikethrough fix",
+    )
     parser.add_argument("--no-mailto", action="store_true", help="Disable mailto link fix")
     parser.add_argument("--no-code-blanks", action="store_true", help="Disable code-block blank-line collapsing")
     parser.add_argument(
@@ -803,6 +892,7 @@ def main():
 
     enabled = []
     if not args.no_underline: enabled.append("<u>->underline")
+    if not args.no_strike_tilde: enabled.append("~~->strikethrough")
     if not args.no_mailto: enabled.append("mailto-links")
     if not args.no_code_blanks: enabled.append("code-blanks")
     if not args.no_merge_consecutive_code: enabled.append("merge-consecutive-code")
@@ -814,6 +904,7 @@ def main():
 
     opts = {
         "do_underline": not args.no_underline,
+        "do_strike_tilde": not args.no_strike_tilde,
         "do_mailto": not args.no_mailto,
         "do_code_blanks": not args.no_code_blanks,
         "do_merge_code_blocks": not args.no_merge_consecutive_code,
@@ -822,6 +913,7 @@ def main():
     stats = {
         "pages_scanned": 0,
         "fixed_underline": 0,
+        "fixed_strikethrough": 0,
         "fixed_mailto": 0,
         "fixed_code": 0,
         "merged_code_blocks": 0,
@@ -845,11 +937,12 @@ def main():
     log("=== SUMMARY ===")
     log(f"Pages scanned:           {stats['pages_scanned']}")
     log(f"Underline fixes:         {stats['fixed_underline']}")
+    log(f"Strikethrough (~~) fixes: {stats['fixed_strikethrough']}")
     log(f"Mailto link fixes:       {stats['fixed_mailto']}")
     log(f"Code-block fixes:        {stats['fixed_code']}")
     log(f"Code blocks merged in:   {stats['merged_code_blocks']}")
     log(f"Heading-marker deletes:  {stats['deleted_markers']}")
-    log(f"Unbalanced <u> tags:     {stats['unbalanced']}  (left untouched)")
+    log(f"Unbalanced <u> / ~~ :     {stats['unbalanced']}  (left untouched)")
     log(f"API errors:              {stats['errors']}")
     if args.dry_run:
         log("(dry run - nothing was actually written)")
