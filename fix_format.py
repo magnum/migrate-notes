@@ -41,6 +41,9 @@ LIMITATIONS:
       (common when Notion autolinks the URL in the middle run only).
       If the merged text would exceed 2000 characters per segment, or two
       different link URLs meet, tags may still be reported as unbalanced.
+      When that happens, a second pass merges the block without Notion links
+      so ``<u>...</u>`` can still be converted (autolinks on multiple URLs are
+      dropped for that paragraph).
     - ``~~...~~`` must form complete pairs in the coalesced text; odd ``~~`` or
       pairs split by incompatible styling/links are left as-is and skipped.
     - The "delete stray heading marker" fix only matches blocks that consist
@@ -61,6 +64,8 @@ NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "")
 DEFAULT_PARENT_URL = os.environ.get("NOTION_NOTES_PARENT_URL", "")
 NOTION_API = "https://api.notion.com/v1"
 RATE_LIMIT_SLEEP = 0.35
+# Notion rich_text text.content max length per segment
+NOTION_TEXT_CHUNK_SIZE = 2000
 
 RICH_TEXT_BLOCK_TYPES = {
     "paragraph", "heading_1", "heading_2", "heading_3",
@@ -263,17 +268,91 @@ def _copy_text_segment_structure(seg):
     return out
 
 
-def coalesce_adjacent_text_segments(rich_text):
-    """Join consecutive text runs so literal ``<u>...</u>`` and ``~~..~~`` parse.
+def _rich_text_concat_text_segments(rich_text):
+    return "".join(
+        ((s.get("text") or {}).get("content", "") or "")
+        for s in rich_text
+        if s.get("type") == "text"
+    )
 
-    Merges adjacent ``text`` segments when:
-    - bold/italic/code/color match;
-    - link URLs are equal, or exactly one side has a link (keep that URL);
-    - combined length ≤ 2000 (Notion limit).
 
-    ``underline`` / ``strikethrough`` may differ between runs; both are merged
-    with OR onto the left run before marker stripping.
-    """
+def _underline_would_be_unbalanced(rich_text):
+    for seg in rich_text:
+        if seg.get("type") != "text":
+            continue
+        _, st = transform_underline(seg)
+        if st == "unbalanced":
+            return True
+    return False
+
+
+def _strikethrough_would_be_unbalanced(rich_text):
+    for seg in rich_text:
+        if seg.get("type") != "text":
+            continue
+        _, st = transform_strikethrough_tilde(seg)
+        if st == "unbalanced":
+            return True
+    return False
+
+
+def coalesce_adjacent_text_segments_aggressive_strip_links(rich_text):
+    """Merge consecutive text runs with the same bold/italic/code/color, drop
+    links. Used when Notion gave each URL a different link so normal coalesce
+    leaves ``<u>...</u>`` or ``~~`` split across segments."""
+    out = []
+    n = len(rich_text)
+    i = 0
+    while i < n:
+        seg = rich_text[i]
+        if seg.get("type") != "text":
+            out.append(copy.deepcopy(seg))
+            i += 1
+            continue
+        key = _merge_style_key(seg)
+        ann_defaults = {
+            "bold": False,
+            "italic": False,
+            "strikethrough": False,
+            "underline": False,
+            "code": False,
+            "color": "default",
+        }
+        pa = seg.get("annotations") or {}
+        merged_ann = {**ann_defaults, **pa}
+        ann_u = bool(pa.get("underline"))
+        ann_s = bool(pa.get("strikethrough"))
+        chunks = [(seg.get("text") or {}).get("content", "") or ""]
+        j = i + 1
+        while j < n and rich_text[j].get("type") == "text":
+            s2 = rich_text[j]
+            if _merge_style_key(s2) != key:
+                break
+            chunks.append((s2.get("text") or {}).get("content", "") or "")
+            a2 = s2.get("annotations") or {}
+            ann_u = ann_u or bool(a2.get("underline"))
+            ann_s = ann_s or bool(a2.get("strikethrough"))
+            j += 1
+        merged_ann["underline"] = ann_u
+        merged_ann["strikethrough"] = ann_s
+        combined = "".join(chunks)
+        pos = 0
+        while pos < len(combined):
+            piece = combined[pos : pos + NOTION_TEXT_CHUNK_SIZE]
+            out.append(
+                {
+                    "type": "text",
+                    "text": {"content": piece},
+                    "annotations": dict(merged_ann),
+                }
+            )
+            pos += NOTION_TEXT_CHUNK_SIZE
+        i = j
+    return out
+
+
+def coalesce_adjacent_text_segments_normal(rich_text):
+    """Link-aware merge: same bold/italic/code/color + compatible links."""
     if not rich_text:
         return rich_text
     out = []
@@ -289,7 +368,7 @@ def coalesce_adjacent_text_segments(rich_text):
             )
             if ok_links and _merge_style_key(prev_seg) == _merge_style_key(seg):
                 prev = (prev_seg.get("text") or {}).get("content", "") or ""
-                if len(prev) + len(chunk) <= 2000:
+                if len(prev) + len(chunk) <= NOTION_TEXT_CHUNK_SIZE:
                     prev_seg["text"]["content"] = prev + chunk
                     pa = prev_seg.get("annotations") or {}
                     sa = seg.get("annotations") or {}
@@ -318,6 +397,29 @@ def coalesce_adjacent_text_segments(rich_text):
                     continue
         out.append(_copy_text_segment_structure(seg))
     return out
+
+
+def coalesce_adjacent_text_segments(rich_text):
+    """Join consecutive text runs so literal ``<u>...</u>`` and ``~~..~~`` parse.
+
+    First tries link-aware merge; if ``<u>`` / ``~~`` would stay unbalanced,
+    re-merges from the original list **without** links so markers can parse
+    (multiple Basecamp-style autolinks in one paragraph).
+    """
+    if not rich_text:
+        return rich_text
+    normal = coalesce_adjacent_text_segments_normal(rich_text)
+    blob_all = _rich_text_concat_text_segments(normal)
+    blob_l = blob_all.lower()
+    broken_u = ("<u>" in blob_l or "</u>" in blob_l) and _underline_would_be_unbalanced(
+        normal
+    )
+    broken_strike = "~~" in blob_all and _strikethrough_would_be_unbalanced(
+        normal
+    )
+    if broken_u or broken_strike:
+        return coalesce_adjacent_text_segments_aggressive_strip_links(rich_text)
+    return normal
 
 
 # ---------------------------------------------------------------------------
@@ -500,8 +602,6 @@ def transform_rich_text(rich_text, *, do_underline=True, do_strike_tilde=True, d
 # Remove repeated newline runs inside code blocks. Notion stores code as plain
 # text, so a visually extra blank line is represented by "\n\n".
 EXTRA_CODE_NEWLINES_RE = re.compile(r"(?:[ \t]*(?:\r\n|\r|\n)){2,}")
-NOTION_TEXT_CHUNK_SIZE = 2000
-
 
 def _split_notion_text(content):
     return [
